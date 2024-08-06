@@ -22,7 +22,7 @@ func main() {
 
 	ctx := context.Background()
 
-	pool, err := pgxpool.NewPool(ctx, fmt.Sprintf(
+	pool, err := pgxpool.New(ctx, fmt.Sprintf(
 		"user=%s password=%s host=%s port=%s dbname=%s",
 		os.Getenv("DB_USER"),
 		os.Getenv("DB_PASSWORD"),

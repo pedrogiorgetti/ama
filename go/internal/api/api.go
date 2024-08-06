@@ -13,7 +13,7 @@ type apiHandler struct {
 	r *chi.Mux
 }
 
-func (handler *apiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+func (handler apiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	handler.r.ServeHTTP(writer, request)
 }
 
