@@ -113,7 +113,7 @@ func (handler apiHandler) handleNotify(message Message) {
 	}
 }
 
-func (handler apiHandler) handleCheckIfRoomExists(roomID uuid.UUID, err error, writer http.ResponseWriter, request *http.Request) bool {
+func (handler apiHandler) checkIfRoomExists(roomID uuid.UUID, err error, writer http.ResponseWriter, request *http.Request) bool {
 	if err != nil {
 		http.Error(writer, "Invalid room ID", http.StatusBadRequest)
 		return false
@@ -133,10 +133,30 @@ func (handler apiHandler) handleCheckIfRoomExists(roomID uuid.UUID, err error, w
 	return true
 }
 
+func (handler apiHandler) checkIfMessageExists(messageID uuid.UUID, err error, writer http.ResponseWriter, request *http.Request) bool {
+	if err != nil {
+		http.Error(writer, "Invalid message ID", http.StatusBadRequest)
+		return false
+	}
+
+	_, err = handler.query.GetMessage(request.Context(), messageID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(writer, "Message not found", http.StatusNotFound)
+			return false
+		}
+
+		http.Error(writer, "Something went wrong", http.StatusInternalServerError)
+		return false
+	}
+
+	return true
+}
+
 func (handler apiHandler) handleSubscribe(writer http.ResponseWriter, request *http.Request) {
 	rawRoomID := chi.URLParam(request, "room_id")
 	roomID, err := uuid.Parse(rawRoomID)
-	roomExists := handler.handleCheckIfRoomExists(roomID, err, writer, request)
+	roomExists := handler.checkIfRoomExists(roomID, err, writer, request)
 
 	if !roomExists {
 		return
@@ -195,19 +215,41 @@ func (handler apiHandler) handleCreateRoom(writer http.ResponseWriter, request *
 		UpdatedAt string `json:"updated_at"`
 	}
 
-	data, _ := json.Marshal(response{ID: room.ID.String(), Theme: room.Theme, CreatedAt: room.CreatedAt.Time.String(), UpdatedAt: room.UpdatedAt.Time.String()})
+	data, _ := json.Marshal(response{
+		ID:        room.ID.String(),
+		Theme:     room.Theme,
+		CreatedAt: room.CreatedAt.Time.String(),
+		UpdatedAt: room.UpdatedAt.Time.String(),
+	})
 	writer.Header().Set("Content-Type", "application/json")
 	_, _ = writer.Write(data)
 }
 
 func (handler apiHandler) handleGetRooms(writer http.ResponseWriter, request *http.Request) {
-	// handler.q.GetRooms()
+	rooms, err := handler.query.GetRooms(request.Context())
+	if err != nil {
+		slog.Error("Failed to get rooms", "error", err)
+		http.Error(writer, "Something went wrong while getting rooms", http.StatusInternalServerError)
+		return
+	}
+
+	type response struct {
+		List  []postgres.Room `json:"rooms"`
+		Total int             `json:"total"`
+	}
+
+	data, _ := json.Marshal(response{
+		List:  rooms,
+		Total: len(rooms),
+	})
+	writer.Header().Set("Content-Type", "application/json")
+	_, _ = writer.Write(data)
 }
 
 func (handler apiHandler) handleCreateRoomMessage(writer http.ResponseWriter, request *http.Request) {
 	rawRoomID := chi.URLParam(request, "room_id")
 	roomID, err := uuid.Parse(rawRoomID)
-	roomExists := handler.handleCheckIfRoomExists(roomID, err, writer, request)
+	roomExists := handler.checkIfRoomExists(roomID, err, writer, request)
 
 	if !roomExists {
 		return
@@ -237,7 +279,12 @@ func (handler apiHandler) handleCreateRoomMessage(writer http.ResponseWriter, re
 		UpdatedAt string `json:"updated_at"`
 	}
 
-	data, _ := json.Marshal(response{ID: message.ID.String(), Text: message.Text, CreatedAt: message.CreatedAt.Time.String(), UpdatedAt: message.UpdatedAt.Time.String()})
+	data, _ := json.Marshal(response{
+		ID:        message.ID.String(),
+		Text:      message.Text,
+		CreatedAt: message.CreatedAt.Time.String(),
+		UpdatedAt: message.UpdatedAt.Time.String(),
+	})
 	writer.Header().Set("Content-Type", "application/json")
 	_, _ = writer.Write(data)
 
@@ -254,21 +301,156 @@ func (handler apiHandler) handleCreateRoomMessage(writer http.ResponseWriter, re
 }
 
 func (handler apiHandler) handleGetRoomMessages(writer http.ResponseWriter, request *http.Request) {
-	// handler.q.GetRoomMessages()
+	rawRoomID := chi.URLParam(request, "room_id")
+	roomID, err := uuid.Parse(rawRoomID)
+	roomExists := handler.checkIfRoomExists(roomID, err, writer, request)
+
+	if !roomExists {
+		return
+	}
+
+	roomMessages, err := handler.query.GetRoomMessages(request.Context(), roomID)
+	if err != nil {
+		slog.Error("Failed to get room messages", "error", err)
+		http.Error(writer, "Something went wrong while getting messages", http.StatusInternalServerError)
+		return
+	}
+
+	type response struct {
+		Messages []postgres.Message `json:"messages"`
+	}
+
+	data, _ := json.Marshal(response{
+		Messages: roomMessages,
+	})
+	writer.Header().Set("Content-Type", "application/json")
+	_, _ = writer.Write(data)
 }
 
 func (handler apiHandler) handleGetRoomMessage(writer http.ResponseWriter, request *http.Request) {
-	// handler.q.GetRoomMessage()
+	rawMessageID := chi.URLParam(request, "message_id")
+	messageID, err := uuid.Parse(rawMessageID)
+	messageExists := handler.checkIfMessageExists(messageID, err, writer, request)
+
+	if !messageExists {
+		return
+	}
+
+	message, err := handler.query.GetMessage(request.Context(), messageID)
+	if err != nil {
+		slog.Error("Failed to get message", "error", err)
+		http.Error(writer, "Something went wrong while getting message", http.StatusInternalServerError)
+		return
+	}
+
+	type response struct {
+		ID            string `json:"id"`
+		Text          string `json:"text"`
+		ReactionCount int64  `json:"reaction_count"`
+		Answered      bool   `json:"answered"`
+		CreatedAt     string `json:"created_at"`
+		UpdatedAt     string `json:"updated_at"`
+	}
+
+	data, _ := json.Marshal(response{ID: message.ID.String(),
+		Text:          message.Text,
+		ReactionCount: message.ReactionCount,
+		Answered:      message.Answered,
+		CreatedAt:     message.CreatedAt.Time.String(),
+		UpdatedAt:     message.UpdatedAt.Time.String(),
+	})
+	writer.Header().Set("Content-Type", "application/json")
+	_, _ = writer.Write(data)
 }
 
 func (handler apiHandler) handleReactToMessage(writer http.ResponseWriter, request *http.Request) {
-	// handler.q.ReactMessage()
+	rawMessageID := chi.URLParam(request, "message_id")
+	messageID, err := uuid.Parse(rawMessageID)
+	messageExists := handler.checkIfMessageExists(messageID, err, writer, request)
+
+	if !messageExists {
+		return
+	}
+
+	type _body struct {
+		Reaction bool `json:"reaction"`
+	}
+
+	var body _body
+	if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+		http.Error(writer, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	reactionCount, err := handler.query.ReactToMessage(request.Context(), messageID)
+	if err != nil {
+		slog.Error("Failed to react to message", "error", err)
+		http.Error(writer, "Something went wrong while reacting to message", http.StatusInternalServerError)
+		return
+	}
+
+	type response struct {
+		ReactionCount int64 `json:"reaction_count"`
+	}
+
+	data, _ := json.Marshal(response{
+		ReactionCount: reactionCount,
+	})
+	writer.Header().Set("Content-Type", "application/json")
+	_, _ = writer.Write(data)
+
 }
 
 func (handler apiHandler) handleRemoveReaction(writer http.ResponseWriter, request *http.Request) {
-	// handler.q.RemoveReaction()
+	rawMessageID := chi.URLParam(request, "message_id")
+	messageID, err := uuid.Parse(rawMessageID)
+	messageExists := handler.checkIfMessageExists(messageID, err, writer, request)
+
+	if !messageExists {
+		return
+	}
+
+	reactionCount, err := handler.query.RemoveReactionFromMessage(request.Context(), messageID)
+	if err != nil {
+		slog.Error("Failed to remove the reaction from message", "error", err)
+		http.Error(writer, "Something went wrong while removing react from message", http.StatusInternalServerError)
+		return
+	}
+
+	type response struct {
+		ReactionCount int64 `json:"reaction_count"`
+	}
+
+	data, _ := json.Marshal(response{
+		ReactionCount: reactionCount,
+	})
+	writer.Header().Set("Content-Type", "application/json")
+	_, _ = writer.Write(data)
 }
 
 func (handler apiHandler) handleMarkMessageAsAnswered(writer http.ResponseWriter, request *http.Request) {
-	// handler.q.MarkMessageAsAnswered()
+	rawMessageID := chi.URLParam(request, "message_id")
+	messageID, err := uuid.Parse(rawMessageID)
+	messageExists := handler.checkIfMessageExists(messageID, err, writer, request)
+
+	if !messageExists {
+		return
+	}
+
+	err = handler.query.MarkMessageAsAnswered(request.Context(), messageID)
+	if err != nil {
+		slog.Error("Failed to mark message as answered", "error", err)
+		http.Error(writer, "Something went wrong while marking message as answered", http.StatusInternalServerError)
+		return
+	}
+
+	type response struct {
+		Message string `json:"message"`
+	}
+
+	data, _ := json.Marshal(response{
+		Message: "Message marked as answered",
+	})
+	writer.Header().Set("Content-Type", "application/json")
+	_, _ = writer.Write(data)
 }
