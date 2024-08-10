@@ -27,8 +27,8 @@
 
 Before you begin, ensure you have the following installed on your system:
 
-- **Go** (version 1.16 or higher)
-- **Node.js** (version 14 or higher)
+- **Go** (version 1.22.5 or higher)
+- **Node.js** (version 18 or higher)
 - **npm** or **yarn**
 - **PostgreSQL** (or another supported database)
 
