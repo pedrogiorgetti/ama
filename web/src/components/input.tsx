@@ -1,7 +1,7 @@
 import classNames from 'classnames';
 import { DetailedHTMLProps, InputHTMLAttributes } from 'react';
 
-export function InputComponent({
+export function Input({
   name,
   type = 'text',
   placeholder,

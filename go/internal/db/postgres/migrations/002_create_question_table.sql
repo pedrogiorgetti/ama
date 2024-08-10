@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS message (
+CREATE TABLE IF NOT EXISTS question (
     "id"             uuid PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
     "room_id"        uuid             NOT NULL,
     "text"           VARCHAR(255)     NOT NULL,
@@ -12,4 +12,4 @@ CREATE TABLE IF NOT EXISTS message (
 
 ---- create above / drop below ----
 
-DROP TABLE IF EXISTS message;
+DROP TABLE IF EXISTS question;

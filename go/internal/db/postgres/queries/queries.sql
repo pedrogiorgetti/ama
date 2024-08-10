@@ -1,54 +1,54 @@
 -- name: GetRoom :one
 SELECT 
-    "id", "theme", "created_at", "updated_at"
+    "id", "name", "created_at", "updated_at"
 FROM room
 WHERE "id" = $1;
 
 -- name: GetRooms :many
 SELECT 
-    "id", "theme", "created_at", "updated_at"
+    "id", "name", "created_at", "updated_at"
 FROM room;
 
 -- name: CreateRoom :one
 INSERT INTO room 
-  ("theme") VALUES
+  ("name") VALUES
   ($1)
-RETURNING "id", "theme", "created_at", "updated_at";
+RETURNING "id", "name", "created_at", "updated_at";
 
--- name: GetMessage :one
+-- name: GetQuestion :one
 SELECT
     "id", "room_id", "text", "reaction_count", "answered", "created_at", "updated_at"
-FROM message
+FROM question
 WHERE "id" = $1;
 
--- name: GetRoomMessages :many
+-- name: GetRoomQuestions :many
 SELECT
     "id", "room_id", "text", "reaction_count", "answered", "created_at", "updated_at"
-FROM message
+FROM question
 WHERE "room_id" = $1;
 
--- name: CreateMessage :one
-INSERT INTO message 
+-- name: CreateQuestion :one
+INSERT INTO question 
   ("room_id", "text")
   VALUES ($1, $2)
 RETURNING "id", "room_id", "text", "reaction_count", "answered", "created_at", "updated_at";
 
--- name: ReactToMessage :one
-UPDATE message
+-- name: ReactToQuestion :one
+UPDATE question
 SET
     "reaction_count" = "reaction_count" + 1
 WHERE "id" = $1
 RETURNING "reaction_count";
 
--- name: RemoveReactionFromMessage :one
-UPDATE message
+-- name: RemoveReactionFromQuestion :one
+UPDATE question
 SET
     "reaction_count" = "reaction_count" - 1
 WHERE "id" = $1
 RETURNING "reaction_count";
 
--- name: MarkMessageAsAnswered :exec
-UPDATE message
+-- name: MarkQuestionAsAnswered :exec
+UPDATE question
 SET
     "answered" = true
 WHERE "id" = $1;

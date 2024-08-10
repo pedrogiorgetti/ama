@@ -11,21 +11,21 @@ import (
 	"github.com/google/uuid"
 )
 
-const createMessage = `-- name: CreateMessage :one
-INSERT INTO message 
+const createQuestion = `-- name: CreateQuestion :one
+INSERT INTO question 
   ("room_id", "text")
   VALUES ($1, $2)
 RETURNING "id", "room_id", "text", "reaction_count", "answered", "created_at", "updated_at"
 `
 
-type CreateMessageParams struct {
+type CreateQuestionParams struct {
 	RoomID uuid.UUID
 	Text   string
 }
 
-func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error) {
-	row := q.db.QueryRow(ctx, createMessage, arg.RoomID, arg.Text)
-	var i Message
+func (q *Queries) CreateQuestion(ctx context.Context, arg CreateQuestionParams) (Question, error) {
+	row := q.db.QueryRow(ctx, createQuestion, arg.RoomID, arg.Text)
+	var i Question
 	err := row.Scan(
 		&i.ID,
 		&i.RoomID,
@@ -40,33 +40,33 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 
 const createRoom = `-- name: CreateRoom :one
 INSERT INTO room 
-  ("theme") VALUES
+  ("name") VALUES
   ($1)
-RETURNING "id", "theme", "created_at", "updated_at"
+RETURNING "id", "name", "created_at", "updated_at"
 `
 
-func (q *Queries) CreateRoom(ctx context.Context, theme string) (Room, error) {
-	row := q.db.QueryRow(ctx, createRoom, theme)
+func (q *Queries) CreateRoom(ctx context.Context, name string) (Room, error) {
+	row := q.db.QueryRow(ctx, createRoom, name)
 	var i Room
 	err := row.Scan(
 		&i.ID,
-		&i.Theme,
+		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const getMessage = `-- name: GetMessage :one
+const getQuestion = `-- name: GetQuestion :one
 SELECT
     "id", "room_id", "text", "reaction_count", "answered", "created_at", "updated_at"
-FROM message
+FROM question
 WHERE "id" = $1
 `
 
-func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error) {
-	row := q.db.QueryRow(ctx, getMessage, id)
-	var i Message
+func (q *Queries) GetQuestion(ctx context.Context, id uuid.UUID) (Question, error) {
+	row := q.db.QueryRow(ctx, getQuestion, id)
+	var i Question
 	err := row.Scan(
 		&i.ID,
 		&i.RoomID,
@@ -81,7 +81,7 @@ func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error)
 
 const getRoom = `-- name: GetRoom :one
 SELECT 
-    "id", "theme", "created_at", "updated_at"
+    "id", "name", "created_at", "updated_at"
 FROM room
 WHERE "id" = $1
 `
@@ -91,29 +91,29 @@ func (q *Queries) GetRoom(ctx context.Context, id uuid.UUID) (Room, error) {
 	var i Room
 	err := row.Scan(
 		&i.ID,
-		&i.Theme,
+		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const getRoomMessages = `-- name: GetRoomMessages :many
+const getRoomQuestions = `-- name: GetRoomQuestions :many
 SELECT
     "id", "room_id", "text", "reaction_count", "answered", "created_at", "updated_at"
-FROM message
+FROM question
 WHERE "room_id" = $1
 `
 
-func (q *Queries) GetRoomMessages(ctx context.Context, roomID uuid.UUID) ([]Message, error) {
-	rows, err := q.db.Query(ctx, getRoomMessages, roomID)
+func (q *Queries) GetRoomQuestions(ctx context.Context, roomID uuid.UUID) ([]Question, error) {
+	rows, err := q.db.Query(ctx, getRoomQuestions, roomID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Message
+	var items []Question
 	for rows.Next() {
-		var i Message
+		var i Question
 		if err := rows.Scan(
 			&i.ID,
 			&i.RoomID,
@@ -135,7 +135,7 @@ func (q *Queries) GetRoomMessages(ctx context.Context, roomID uuid.UUID) ([]Mess
 
 const getRooms = `-- name: GetRooms :many
 SELECT 
-    "id", "theme", "created_at", "updated_at"
+    "id", "name", "created_at", "updated_at"
 FROM room
 `
 
@@ -150,7 +150,7 @@ func (q *Queries) GetRooms(ctx context.Context) ([]Room, error) {
 		var i Room
 		if err := rows.Scan(
 			&i.ID,
-			&i.Theme,
+			&i.Name,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -164,43 +164,43 @@ func (q *Queries) GetRooms(ctx context.Context) ([]Room, error) {
 	return items, nil
 }
 
-const markMessageAsAnswered = `-- name: MarkMessageAsAnswered :exec
-UPDATE message
+const markQuestionAsAnswered = `-- name: MarkQuestionAsAnswered :exec
+UPDATE question
 SET
     "answered" = true
 WHERE "id" = $1
 `
 
-func (q *Queries) MarkMessageAsAnswered(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, markMessageAsAnswered, id)
+func (q *Queries) MarkQuestionAsAnswered(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markQuestionAsAnswered, id)
 	return err
 }
 
-const reactToMessage = `-- name: ReactToMessage :one
-UPDATE message
+const reactToQuestion = `-- name: ReactToQuestion :one
+UPDATE question
 SET
     "reaction_count" = "reaction_count" + 1
 WHERE "id" = $1
 RETURNING "reaction_count"
 `
 
-func (q *Queries) ReactToMessage(ctx context.Context, id uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, reactToMessage, id)
+func (q *Queries) ReactToQuestion(ctx context.Context, id uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, reactToQuestion, id)
 	var reaction_count int64
 	err := row.Scan(&reaction_count)
 	return reaction_count, err
 }
 
-const removeReactionFromMessage = `-- name: RemoveReactionFromMessage :one
-UPDATE message
+const removeReactionFromQuestion = `-- name: RemoveReactionFromQuestion :one
+UPDATE question
 SET
     "reaction_count" = "reaction_count" - 1
 WHERE "id" = $1
 RETURNING "reaction_count"
 `
 
-func (q *Queries) RemoveReactionFromMessage(ctx context.Context, id uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, removeReactionFromMessage, id)
+func (q *Queries) RemoveReactionFromQuestion(ctx context.Context, id uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, removeReactionFromQuestion, id)
 	var reaction_count int64
 	err := row.Scan(&reaction_count)
 	return reaction_count, err

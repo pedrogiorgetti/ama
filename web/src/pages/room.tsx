@@ -1,15 +1,20 @@
+import { Suspense, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import amaLogo from '../assets/logo.svg';
-import { ButtonComponent } from '../components/button';
 import { ArrowRight, Share2 } from 'lucide-react';
-import { InputComponent } from '../components/input';
-import { FormComponent } from '../components/form';
-
 import { toast } from 'sonner';
-import { QuestionComponent } from '../components/question';
+
+import amaLogo from '../assets/logo.svg';
+import { Button } from '../components/button';
+import { Input } from '../components/input';
+import { Form } from '../components/form';
+import { Questions } from '../components/question/list';
+import { createQuestionRequest } from '../http/room/createQuestion';
 
 export function Room() {
-  const params = useParams();
+  const { id: roomId } = useParams();
+
+  const [isErrored, setIsErrored] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   function handleShareRoom() {
     const url = window.location.href.toString();
@@ -24,10 +29,37 @@ export function Room() {
     toast.info('Room URL copied to clipboard');
   }
 
-  function handleCreateQuestion(data: FormData) {
-    const text = data.get('text') as string;
+  async function handleCreateQuestion(data: FormData) {
+    try {
+      if (!roomId) {
+        toast.error('Room ID is required');
+        return;
+      }
 
-    console.log('Criar sala com o tema:', text);
+      const text = data.get('text') as string;
+
+      if (!text) {
+        setIsErrored(true);
+      }
+
+      setIsErrored(false);
+      setIsLoading(true);
+
+      await createQuestionRequest({
+        params: {
+          id: roomId,
+        },
+        body: {
+          text,
+        },
+        functions: {
+          stopLoading: () => setIsLoading(false),
+        },
+      });
+    } catch {
+      setIsLoading(false);
+      toast.error('An error occurred while creating the question');
+    }
   }
 
   return (
@@ -36,35 +68,36 @@ export function Room() {
         <img className="h-5" src={amaLogo} alt="AMA - Logo" />
 
         <h4 className="text-sm text-zinc-500 truncate">
-          Room ID: <b className="text-zinc-300">{params.id}</b>
+          Room ID: <b className="text-zinc-300">{roomId}</b>
         </h4>
 
-        <ButtonComponent
+        <Button
           className="ml-auto bg-zinc-800 text-zinc-300 hover:bg-zinc-900"
           type="submit"
           onClick={handleShareRoom}
         >
           Share
           <Share2 className="size-4" />
-        </ButtonComponent>
+        </Button>
       </div>
 
       <hr className="h-px w-full bg-zinc-900" />
 
-      <FormComponent action={handleCreateQuestion}>
-        <InputComponent name="text" placeholder="What is your question?" />
-        <ButtonComponent
+      <Form hasError={isErrored} action={handleCreateQuestion}>
+        <Input name="text" placeholder="What is your question?" />
+        <Button
           className="bg-orange-400 text-orange-950 hover:bg-orange-500"
           type="submit"
+          isLoading={isLoading}
         >
           Create question
           <ArrowRight className="size-4" />
-        </ButtonComponent>
-      </FormComponent>
+        </Button>
+      </Form>
 
-      <ol className="list-decimal list-outside px-3 space-y-8">
-        <QuestionComponent reactionCount={24} text="Question one" />
-      </ol>
+      <Suspense fallback={<p>Loading questions...</p>}>
+        <Questions />
+      </Suspense>
     </div>
   );
 }

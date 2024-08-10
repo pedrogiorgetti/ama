@@ -57,15 +57,15 @@ func NewHandler(query *postgres.Queries) http.Handler {
 			router.Post("/", api.handleCreateRoom)
 			router.Get("/", api.handleGetRooms)
 
-			router.Route("/{room_id}/messages", func(router chi.Router) {
-				router.Post("/", api.handleCreateRoomMessage)
-				router.Get("/", api.handleGetRoomMessages)
+			router.Route("/{room_id}/questions", func(router chi.Router) {
+				router.Post("/", api.handleCreateRoomQuestion)
+				router.Get("/", api.handleGetRoomQuestions)
 
-				router.Route("/{message_id}", func(router chi.Router) {
-					router.Get("/", api.handleGetRoomMessage)
-					router.Patch("/react", api.handleReactToMessage)
+				router.Route("/{question_id}", func(router chi.Router) {
+					router.Get("/", api.handleGetRoomQuestion)
+					router.Patch("/react", api.handleReactToQuestion)
 					router.Delete("/react", api.handleRemoveReaction)
-					router.Patch("/answers", api.handleMarkMessageAsAnswered)
+					router.Patch("/answers", api.handleMarkQuestionAsAnswered)
 				})
 			})
 		})
@@ -77,72 +77,51 @@ func NewHandler(query *postgres.Queries) http.Handler {
 }
 
 const (
-	MessageCreatedCategory  = "message_created"
-	MessageDeletedCategory  = "message_deleted"
-	MessageReactedCategory  = "message_reacted"
-	MessageAnsweredCategory = "message_answered"
+	QuestionCreatedCategory          = "question_created"
+	QuestionReactionIncreaseCategory = "question_reaction_increase"
+	QuestionReactionDecreaseCategory = "question_reaction_decrease"
+	QuestionAnsweredCategory         = "question_answered"
 )
 
-type MessageCreated struct {
-	ID        string `json:"id"`
-	Text      string `json:"text"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+type NotificationValue struct {
+	ID    string `json:"id"`
+	Text  string `json:"text"`
+	Count int64  `json:"count"`
 }
 
-type Message struct {
-	Category string         `json:"category"`
-	Value    MessageCreated `json:"value"`
-	RoomId   string         `json:"-"`
+type Notification struct {
+	Category string            `json:"category"`
+	Value    NotificationValue `json:"value"`
+	RoomId   string            `json:"-"`
 }
 
-func (handler apiHandler) handleNotify(message Message) {
+func (handler apiHandler) handleNotify(notification Notification) {
 	handler.mutex.Lock()
 	defer handler.mutex.Unlock()
 
-	subscribers, ok := handler.subscribers[message.RoomId]
+	subscribers, ok := handler.subscribers[notification.RoomId]
 	if !ok || len(subscribers) == 0 {
 		return
 	}
 
 	for connection, cancel := range subscribers {
-		if err := connection.WriteJSON(message); err != nil {
-			slog.Warn("Failed to send message to client", "error", err)
+		if err := connection.WriteJSON(notification); err != nil {
+			slog.Warn("Failed to send notification to client", "error", err)
 			cancel()
 		}
 	}
 }
 
-func (handler apiHandler) checkIfRoomExists(roomID uuid.UUID, err error, writer http.ResponseWriter, request *http.Request) bool {
+func (handler apiHandler) checkIfQuestionExists(questionID uuid.UUID, err error, writer http.ResponseWriter, request *http.Request) bool {
 	if err != nil {
-		http.Error(writer, "Invalid room ID", http.StatusBadRequest)
+		http.Error(writer, "Invalid question ID", http.StatusBadRequest)
 		return false
 	}
 
-	_, err = handler.query.GetRoom(request.Context(), roomID)
+	_, err = handler.query.GetQuestion(request.Context(), questionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			http.Error(writer, "Room not found", http.StatusNotFound)
-			return false
-		}
-
-		http.Error(writer, "Something went wrong", http.StatusInternalServerError)
-		return false
-	}
-
-	return true
-}
-
-func (handler apiHandler) checkIfMessageExists(messageID uuid.UUID, err error, writer http.ResponseWriter, request *http.Request) bool {
-	if err != nil {
-		http.Error(writer, "Invalid message ID", http.StatusBadRequest)
-		return false
-	}
-
-	_, err = handler.query.GetMessage(request.Context(), messageID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			http.Error(writer, "Message not found", http.StatusNotFound)
+			http.Error(writer, "Question not found", http.StatusNotFound)
 			return false
 		}
 
@@ -154,11 +133,9 @@ func (handler apiHandler) checkIfMessageExists(messageID uuid.UUID, err error, w
 }
 
 func (handler apiHandler) handleSubscribe(writer http.ResponseWriter, request *http.Request) {
-	rawRoomID := chi.URLParam(request, "room_id")
-	roomID, err := uuid.Parse(rawRoomID)
-	roomExists := handler.checkIfRoomExists(roomID, err, writer, request)
+	_, rawRoomID, _, ok := handler.readRoom(writer, request)
 
-	if !roomExists {
+	if !ok {
 		return
 	}
 
@@ -192,7 +169,7 @@ func (handler apiHandler) handleSubscribe(writer http.ResponseWriter, request *h
 
 func (handler apiHandler) handleCreateRoom(writer http.ResponseWriter, request *http.Request) {
 	type _body struct {
-		Theme string `json:"theme"`
+		Name string `json:"name"`
 	}
 	var body _body
 
@@ -201,7 +178,7 @@ func (handler apiHandler) handleCreateRoom(writer http.ResponseWriter, request *
 		return
 	}
 
-	room, err := handler.query.CreateRoom(request.Context(), body.Theme)
+	room, err := handler.query.CreateRoom(request.Context(), body.Name)
 	if err != nil {
 		slog.Error("Failed to create room", "error", err)
 		http.Error(writer, "Something went wrong", http.StatusInternalServerError)
@@ -210,19 +187,17 @@ func (handler apiHandler) handleCreateRoom(writer http.ResponseWriter, request *
 
 	type response struct {
 		ID        string `json:"id"`
-		Theme     string `json:"theme"`
+		Name      string `json:"name"`
 		CreatedAt string `json:"created_at"`
 		UpdatedAt string `json:"updated_at"`
 	}
 
-	data, _ := json.Marshal(response{
+	sendJSON(writer, response{
 		ID:        room.ID.String(),
-		Theme:     room.Theme,
+		Name:      room.Name,
 		CreatedAt: room.CreatedAt.Time.String(),
 		UpdatedAt: room.UpdatedAt.Time.String(),
 	})
-	writer.Header().Set("Content-Type", "application/json")
-	_, _ = writer.Write(data)
 }
 
 func (handler apiHandler) handleGetRooms(writer http.ResponseWriter, request *http.Request) {
@@ -238,20 +213,16 @@ func (handler apiHandler) handleGetRooms(writer http.ResponseWriter, request *ht
 		Total int             `json:"total"`
 	}
 
-	data, _ := json.Marshal(response{
+	sendJSON(writer, response{
 		List:  rooms,
 		Total: len(rooms),
 	})
-	writer.Header().Set("Content-Type", "application/json")
-	_, _ = writer.Write(data)
 }
 
-func (handler apiHandler) handleCreateRoomMessage(writer http.ResponseWriter, request *http.Request) {
-	rawRoomID := chi.URLParam(request, "room_id")
-	roomID, err := uuid.Parse(rawRoomID)
-	roomExists := handler.checkIfRoomExists(roomID, err, writer, request)
+func (handler apiHandler) handleCreateRoomQuestion(writer http.ResponseWriter, request *http.Request) {
+	_, rawRoomID, roomID, ok := handler.readRoom(writer, request)
 
-	if !roomExists {
+	if !ok {
 		return
 	}
 
@@ -265,10 +236,10 @@ func (handler apiHandler) handleCreateRoomMessage(writer http.ResponseWriter, re
 		return
 	}
 
-	message, err := handler.query.CreateMessage(request.Context(), postgres.CreateMessageParams{RoomID: roomID, Text: body.Text})
+	question, err := handler.query.CreateQuestion(request.Context(), postgres.CreateQuestionParams{RoomID: roomID, Text: body.Text})
 	if err != nil {
-		slog.Error("Failed to create message", "error", err)
-		http.Error(writer, "Something went wrong while creating message", http.StatusInternalServerError)
+		slog.Error("Failed to create question", "error", err)
+		http.Error(writer, "Something went wrong while creating question", http.StatusInternalServerError)
 		return
 	}
 
@@ -279,67 +250,67 @@ func (handler apiHandler) handleCreateRoomMessage(writer http.ResponseWriter, re
 		UpdatedAt string `json:"updated_at"`
 	}
 
-	data, _ := json.Marshal(response{
-		ID:        message.ID.String(),
-		Text:      message.Text,
-		CreatedAt: message.CreatedAt.Time.String(),
-		UpdatedAt: message.UpdatedAt.Time.String(),
+	sendJSON(writer, response{
+		ID:        question.ID.String(),
+		Text:      question.Text,
+		CreatedAt: question.CreatedAt.Time.String(),
+		UpdatedAt: question.UpdatedAt.Time.String(),
 	})
-	writer.Header().Set("Content-Type", "application/json")
-	_, _ = writer.Write(data)
 
-	go handler.handleNotify(Message{
-		Category: MessageCreatedCategory,
-		Value: MessageCreated{
-			ID:        message.ID.String(),
-			Text:      body.Text,
-			CreatedAt: message.CreatedAt.Time.String(),
-			UpdatedAt: message.UpdatedAt.Time.String(),
+	go handler.handleNotify(Notification{
+		Category: QuestionCreatedCategory,
+		Value: NotificationValue{
+			ID:    question.ID.String(),
+			Text:  body.Text,
+			Count: 0,
 		},
 		RoomId: rawRoomID,
 	})
 }
 
-func (handler apiHandler) handleGetRoomMessages(writer http.ResponseWriter, request *http.Request) {
-	rawRoomID := chi.URLParam(request, "room_id")
-	roomID, err := uuid.Parse(rawRoomID)
-	roomExists := handler.checkIfRoomExists(roomID, err, writer, request)
+func (handler apiHandler) handleGetRoomQuestions(writer http.ResponseWriter, request *http.Request) {
+	_, _, roomID, ok := handler.readRoom(writer, request)
 
-	if !roomExists {
+	if !ok {
 		return
 	}
 
-	roomMessages, err := handler.query.GetRoomMessages(request.Context(), roomID)
+	roomQuestions, err := handler.query.GetRoomQuestions(request.Context(), roomID)
 	if err != nil {
-		slog.Error("Failed to get room messages", "error", err)
-		http.Error(writer, "Something went wrong while getting messages", http.StatusInternalServerError)
+		slog.Error("Failed to get room questions", "error", err)
+		http.Error(writer, "Something went wrong while getting questions", http.StatusInternalServerError)
 		return
+	}
+
+	result := roomQuestions
+	if len(roomQuestions) == 0 {
+		result = []postgres.Question{}
 	}
 
 	type response struct {
-		Messages []postgres.Message `json:"messages"`
+		List  []postgres.Question `json:"list"`
+		Total int                 `json:"total"`
 	}
 
-	data, _ := json.Marshal(response{
-		Messages: roomMessages,
+	sendJSON(writer, response{
+		List:  result,
+		Total: len(roomQuestions),
 	})
-	writer.Header().Set("Content-Type", "application/json")
-	_, _ = writer.Write(data)
 }
 
-func (handler apiHandler) handleGetRoomMessage(writer http.ResponseWriter, request *http.Request) {
-	rawMessageID := chi.URLParam(request, "message_id")
-	messageID, err := uuid.Parse(rawMessageID)
-	messageExists := handler.checkIfMessageExists(messageID, err, writer, request)
+func (handler apiHandler) handleGetRoomQuestion(writer http.ResponseWriter, request *http.Request) {
+	rawQuestionID := chi.URLParam(request, "question_id")
+	questionID, err := uuid.Parse(rawQuestionID)
+	questionExists := handler.checkIfQuestionExists(questionID, err, writer, request)
 
-	if !messageExists {
+	if !questionExists {
 		return
 	}
 
-	message, err := handler.query.GetMessage(request.Context(), messageID)
+	question, err := handler.query.GetQuestion(request.Context(), questionID)
 	if err != nil {
-		slog.Error("Failed to get message", "error", err)
-		http.Error(writer, "Something went wrong while getting message", http.StatusInternalServerError)
+		slog.Error("Failed to get question", "error", err)
+		http.Error(writer, "Something went wrong while getting question", http.StatusInternalServerError)
 		return
 	}
 
@@ -352,23 +323,22 @@ func (handler apiHandler) handleGetRoomMessage(writer http.ResponseWriter, reque
 		UpdatedAt     string `json:"updated_at"`
 	}
 
-	data, _ := json.Marshal(response{ID: message.ID.String(),
-		Text:          message.Text,
-		ReactionCount: message.ReactionCount,
-		Answered:      message.Answered,
-		CreatedAt:     message.CreatedAt.Time.String(),
-		UpdatedAt:     message.UpdatedAt.Time.String(),
+	sendJSON(writer, response{ID: question.ID.String(),
+		Text:          question.Text,
+		ReactionCount: question.ReactionCount,
+		Answered:      question.Answered,
+		CreatedAt:     question.CreatedAt.Time.String(),
+		UpdatedAt:     question.UpdatedAt.Time.String(),
 	})
-	writer.Header().Set("Content-Type", "application/json")
-	_, _ = writer.Write(data)
 }
 
-func (handler apiHandler) handleReactToMessage(writer http.ResponseWriter, request *http.Request) {
-	rawMessageID := chi.URLParam(request, "message_id")
-	messageID, err := uuid.Parse(rawMessageID)
-	messageExists := handler.checkIfMessageExists(messageID, err, writer, request)
+func (handler apiHandler) handleReactToQuestion(writer http.ResponseWriter, request *http.Request) {
+	rawRoomID := chi.URLParam(request, "room_id")
+	rawQuestionID := chi.URLParam(request, "question_id")
+	questionID, err := uuid.Parse(rawQuestionID)
+	questionExists := handler.checkIfQuestionExists(questionID, err, writer, request)
 
-	if !messageExists {
+	if !questionExists {
 		return
 	}
 
@@ -382,10 +352,10 @@ func (handler apiHandler) handleReactToMessage(writer http.ResponseWriter, reque
 		return
 	}
 
-	reactionCount, err := handler.query.ReactToMessage(request.Context(), messageID)
+	reactionCount, err := handler.query.ReactToQuestion(request.Context(), questionID)
 	if err != nil {
-		slog.Error("Failed to react to message", "error", err)
-		http.Error(writer, "Something went wrong while reacting to message", http.StatusInternalServerError)
+		slog.Error("Failed to react to question", "error", err)
+		http.Error(writer, "Something went wrong while reacting to question", http.StatusInternalServerError)
 		return
 	}
 
@@ -393,27 +363,35 @@ func (handler apiHandler) handleReactToMessage(writer http.ResponseWriter, reque
 		ReactionCount int64 `json:"reaction_count"`
 	}
 
-	data, _ := json.Marshal(response{
+	sendJSON(writer, response{
 		ReactionCount: reactionCount,
 	})
-	writer.Header().Set("Content-Type", "application/json")
-	_, _ = writer.Write(data)
 
+	go handler.handleNotify(Notification{
+		Category: QuestionReactionIncreaseCategory,
+		Value: NotificationValue{
+			ID:    questionID.String(),
+			Text:  "Reaction added",
+			Count: reactionCount,
+		},
+		RoomId: rawRoomID,
+	})
 }
 
 func (handler apiHandler) handleRemoveReaction(writer http.ResponseWriter, request *http.Request) {
-	rawMessageID := chi.URLParam(request, "message_id")
-	messageID, err := uuid.Parse(rawMessageID)
-	messageExists := handler.checkIfMessageExists(messageID, err, writer, request)
+	rawRoomID := chi.URLParam(request, "room_id")
+	rawQuestionID := chi.URLParam(request, "question_id")
+	questionID, err := uuid.Parse(rawQuestionID)
+	questionExists := handler.checkIfQuestionExists(questionID, err, writer, request)
 
-	if !messageExists {
+	if !questionExists {
 		return
 	}
 
-	reactionCount, err := handler.query.RemoveReactionFromMessage(request.Context(), messageID)
+	reactionCount, err := handler.query.RemoveReactionFromQuestion(request.Context(), questionID)
 	if err != nil {
-		slog.Error("Failed to remove the reaction from message", "error", err)
-		http.Error(writer, "Something went wrong while removing react from message", http.StatusInternalServerError)
+		slog.Error("Failed to remove the reaction from question", "error", err)
+		http.Error(writer, "Something went wrong while removing react from question", http.StatusInternalServerError)
 		return
 	}
 
@@ -421,36 +399,53 @@ func (handler apiHandler) handleRemoveReaction(writer http.ResponseWriter, reque
 		ReactionCount int64 `json:"reaction_count"`
 	}
 
-	data, _ := json.Marshal(response{
+	sendJSON(writer, response{
 		ReactionCount: reactionCount,
 	})
-	writer.Header().Set("Content-Type", "application/json")
-	_, _ = writer.Write(data)
+
+	go handler.handleNotify(Notification{
+		Category: QuestionReactionDecreaseCategory,
+		Value: NotificationValue{
+			ID:    questionID.String(),
+			Text:  "Reaction removed",
+			Count: reactionCount,
+		},
+		RoomId: rawRoomID,
+	})
 }
 
-func (handler apiHandler) handleMarkMessageAsAnswered(writer http.ResponseWriter, request *http.Request) {
-	rawMessageID := chi.URLParam(request, "message_id")
-	messageID, err := uuid.Parse(rawMessageID)
-	messageExists := handler.checkIfMessageExists(messageID, err, writer, request)
+func (handler apiHandler) handleMarkQuestionAsAnswered(writer http.ResponseWriter, request *http.Request) {
+	rawRoomID := chi.URLParam(request, "room_id")
+	rawQuestionID := chi.URLParam(request, "question_id")
+	questionID, err := uuid.Parse(rawQuestionID)
+	questionExists := handler.checkIfQuestionExists(questionID, err, writer, request)
 
-	if !messageExists {
+	if !questionExists {
 		return
 	}
 
-	err = handler.query.MarkMessageAsAnswered(request.Context(), messageID)
+	err = handler.query.MarkQuestionAsAnswered(request.Context(), questionID)
 	if err != nil {
-		slog.Error("Failed to mark message as answered", "error", err)
-		http.Error(writer, "Something went wrong while marking message as answered", http.StatusInternalServerError)
+		slog.Error("Failed to mark question as answered", "error", err)
+		http.Error(writer, "Something went wrong while marking question as answered", http.StatusInternalServerError)
 		return
 	}
 
 	type response struct {
-		Message string `json:"message"`
+		Question string `json:"question"`
 	}
 
-	data, _ := json.Marshal(response{
-		Message: "Message marked as answered",
+	sendJSON(writer, response{
+		Question: "Question marked as answered",
 	})
-	writer.Header().Set("Content-Type", "application/json")
-	_, _ = writer.Write(data)
+
+	go handler.handleNotify(Notification{
+		Category: questionID.String(),
+		Value: NotificationValue{
+			ID:    questionID.String(),
+			Text:  "Question marked as answered",
+			Count: 0,
+		},
+		RoomId: rawRoomID,
+	})
 }

@@ -1,19 +1,48 @@
 import { ArrowRight } from 'lucide-react';
-import amaLogo from '../assets/logo.svg';
+import { toast } from 'sonner';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+import amaLogo from '../assets/logo.svg';
 import { pages } from '../constants/pages';
-import { ButtonComponent } from '../components/button';
-import { InputComponent } from '../components/input';
-import { FormComponent } from '../components/form';
+import { Button } from '../components/button';
+import { Input } from '../components/input';
+import { Form } from '../components/form';
+import { createRoomRequest } from '../http/room/create';
 
 export function CreateRoom() {
   const navigate = useNavigate();
 
-  function handleCreateRoom(data: FormData) {
-    const theme = data.get('theme') as string;
+  const [isErrored, setIsErrored] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-    console.log('Criar sala com o tema:', theme);
-    navigate(pages.room.details(123123));
+  async function handleCreateRoom(data: FormData) {
+    try {
+      const name = data.get('name') as string;
+
+      if (!name) {
+        setIsErrored(true);
+      }
+
+      setIsErrored(false);
+      setIsLoading(true);
+
+      const room = await createRoomRequest({
+        body: {
+          name,
+        },
+        functions: {
+          stopLoading: () => setIsLoading(false),
+        },
+      });
+
+      navigate(pages.room.details(room.id));
+    } catch {
+      setIsLoading(false);
+      toast.error(`
+        An error occurred while creating the room
+      `);
+    }
   }
 
   return (
@@ -26,16 +55,21 @@ export function CreateRoom() {
           important questions for the community.
         </p>
 
-        <FormComponent action={handleCreateRoom}>
-          <InputComponent name="theme" placeholder="Room's name" />
-          <ButtonComponent
+        <Form hasError={isErrored} action={handleCreateRoom}>
+          <Input name="name" placeholder="Room's name" />
+          {isErrored && (
+            <small className="text-red-500">Room's name is required!</small>
+          )}
+
+          <Button
+            isLoading={isLoading}
             className="bg-orange-400 text-orange-950 hover:bg-orange-500"
             type="submit"
           >
             Create room
             <ArrowRight className="size-4" />
-          </ButtonComponent>
-        </FormComponent>
+          </Button>
+        </Form>
       </div>
     </main>
   );

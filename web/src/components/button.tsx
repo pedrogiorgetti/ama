@@ -4,15 +4,25 @@ import {
   PropsWithChildren,
 } from 'react';
 import classNames from 'classnames';
+import { IsVisible } from './isVisible';
+import { ClipLoader } from 'react-spinners';
 
-export function ButtonComponent({
+interface ButtonProps
+  extends DetailedHTMLProps<
+    ButtonHTMLAttributes<HTMLButtonElement>,
+    HTMLButtonElement
+  > {
+  isLoading?: boolean;
+}
+
+export function Button({
   className,
   type = 'button',
   children,
+  disabled = false,
+  isLoading = false,
   ...rest
-}: PropsWithChildren<
-  DetailedHTMLProps<ButtonHTMLAttributes<HTMLButtonElement>, HTMLButtonElement>
->) {
+}: PropsWithChildren<ButtonProps>) {
   return (
     <button
       className={classNames(
@@ -20,9 +30,13 @@ export function ButtonComponent({
         className,
       )}
       type={type}
+      disabled={disabled || isLoading}
       {...rest}
     >
-      {children}
+      <IsVisible when={!isLoading}>{children}</IsVisible>
+      <IsVisible when={isLoading}>
+        <ClipLoader size={12} />
+      </IsVisible>
     </button>
   );
 }

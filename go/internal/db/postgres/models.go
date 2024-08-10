@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type Message struct {
+type Question struct {
 	ID            uuid.UUID
 	RoomID        uuid.UUID
 	Text          string
@@ -21,7 +21,7 @@ type Message struct {
 
 type Room struct {
 	ID        uuid.UUID
-	Theme     string
+	Name      string
 	CreatedAt pgtype.Timestamp
 	UpdatedAt pgtype.Timestamp
 }
