@@ -57,7 +57,7 @@ Before you begin, ensure you have the following installed on your system:
     ```bash
     cp .env.example .env
     ```
-  - Once we are using `sqlc` libraty to generate type-safe Go code from SQL queries. You'll need to run some commands
+  - Once we are using `sqlc` library to generate type-safe Go code from SQL queries. You'll need to run some commands
     ```bash
     sqlc generate -f ./internal/db/postgres/sqlc.yaml
     ``` 
@@ -101,9 +101,8 @@ Once the installation is complete, you can access the AMA platform via your brow
 
 ### Example
 
-1. **Sign Up/Login**: Create an account or log in to the platform.
-2. **Post a Question**: Navigate to the "Ask a Question" section and submit your query.
-3. **View Responses**: Check the responses to your questions on the main dashboard.
+1. **Post a Question**: Navigate to the "Ask a Question" section and submit your query.
+2. **View Responses**: Check the responses to your questions on the main dashboard.
 
 ## Contributing
 
