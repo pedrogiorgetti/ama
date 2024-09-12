@@ -6,7 +6,7 @@
 
 - [Features](#features)
 - [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
+  - [Pre Requisites](#pre-requisites)
   - [Installation](#installation)
 - [Usage](#usage)
   - [Example](#example)
@@ -16,14 +16,13 @@
 
 ## Features
 
-- **User Authentication**: Secure login and registration.
 - **Question Posting**: Users can post questions and view responses.
 - **Admin Dashboard**: Administrators can moderate questions and manage users.
 - **Real-time Updates**: Receive live updates on new questions and answers.
 
 ## Getting Started
 
-### Prerequisites
+### Pre Requisites
 
 Before you begin, ensure you have the following installed on your system:
 
