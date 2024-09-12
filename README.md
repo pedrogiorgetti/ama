@@ -6,7 +6,7 @@
 
 - [Features](#features)
 - [Getting Started](#getting-started)
-  - [Pre Requisites](#pre-requisites)
+  - [Prerequisites](#prerequisites)
   - [Installation](#installation)
 - [Usage](#usage)
   - [Example](#example)
@@ -22,7 +22,7 @@
 
 ## Getting Started
 
-### Pre Requisites
+### Prerequisites
 
 Before you begin, ensure you have the following installed on your system:
 
